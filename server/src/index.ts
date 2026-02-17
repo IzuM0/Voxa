@@ -12,6 +12,7 @@ import ttsRouter from "./routes/tts";
 import settingsRouter from "./routes/settings";
 import analyticsRouter from "./routes/analytics";
 import userRouter from "./routes/user";
+import { convertMp3ToWav } from "./audio/convertToWav";
 
 // Load server/.env from server directory (works whether run from repo root or server/)
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -174,12 +175,13 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
   try {
     const instructionsParts: string[] = [];
     if (language) instructionsParts.push(`Speak in ${language}.`);
-    if (typeof speed === "number") {
-      instructionsParts.push(`Use a speaking rate of ${speed.toFixed(1)}x (best-effort).`);
-    }
     if (typeof pitch === "number") {
       instructionsParts.push(`Use a pitch of ${pitch.toFixed(1)}x (best-effort).`);
     }
+
+    // Speed: use native API parameter (0.25–4.0) when available for reliable control
+    const speedNum = typeof speed === "number" ? speed : 1.0;
+    const clampedSpeed = Math.min(4, Math.max(0.25, speedNum));
 
     // Call OpenAI Audio Speech API. The response body is a readable stream
     // that we will forward to the client without buffering to disk.
@@ -194,7 +196,8 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
         voice: voice || "alloy",
         input: text,
         response_format: "mp3",
-        instructions: instructionsParts.join(" "),
+        speed: clampedSpeed,
+        ...(instructionsParts.length > 0 && { instructions: instructionsParts.join(" ") }),
       }),
     });
 
@@ -266,61 +269,51 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
       return res.status(502).json({ error: "TTS provider returned no audio stream." });
     }
 
-    // Set streaming headers for the audio response.
-    res.status(200);
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Transfer-Encoding", "chunked");
+    // Fully buffer MP3 from OpenAI (no streaming) for conversion to WAV
+    const mp3Chunks: Buffer[] = [];
+    for await (const chunk of upstream.body as any) {
+      mp3Chunks.push(Buffer.from(chunk));
+    }
+    const mp3Buffer = Buffer.concat(mp3Chunks);
 
+    let wavBuffer: Buffer;
     try {
-      // Stream audio chunks from OpenAI straight to the client.
-      for await (const chunk of upstream.body as any) {
-        if (!res.writableEnded) {
-          res.write(chunk);
-        }
-      }
-
-      if (!res.writableEnded) {
-        res.end();
-      }
-      ttsMessageStatus.set(messageId, "sent");
-
-      // Update database status to 'sent' if message was logged
-      if (dbMessageId && req.userId) {
-        try {
-          const pool = getPool();
-          if (pool) {
-            await pool.query("UPDATE tts_messages SET status = $1 WHERE id = $2", [
-              "sent",
-              dbMessageId,
-            ]);
-          }
-        } catch (dbErr) {
-          // Ignore DB errors
-        }
-      }
-    } catch (err) {
-      // Any error while piping audio should terminate the response safely.
+      wavBuffer = await convertMp3ToWav(mp3Buffer);
+    } catch (convErr: any) {
       ttsMessageStatus.set(messageId, "failed");
-
-      // Update database status if message was logged
       if (dbMessageId && req.userId) {
         try {
           const pool = getPool();
           if (pool) {
             await pool.query(
               "UPDATE tts_messages SET status = $1, error_message = $2 WHERE id = $3",
-              ["failed", "Error while streaming TTS audio", dbMessageId]
+              ["failed", convErr?.message?.substring(0, 500) ?? "Audio conversion failed", dbMessageId]
             );
           }
         } catch (dbErr) {
-          // Ignore DB errors
+          // Ignore
         }
       }
+      return res.status(503).json({
+        error: "Audio conversion unavailable.",
+        details: convErr?.message ?? "Install ffmpeg and ensure it is on PATH for 48kHz mono WAV output.",
+      });
+    }
 
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Error while streaming TTS audio." });
-      } else if (!res.writableEnded) {
-        res.end();
+    res.status(200);
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Content-Length", String(wavBuffer.length));
+    res.send(wavBuffer);
+
+    ttsMessageStatus.set(messageId, "sent");
+    if (dbMessageId && req.userId) {
+      try {
+        const pool = getPool();
+        if (pool) {
+          await pool.query("UPDATE tts_messages SET status = $1 WHERE id = $2", ["sent", dbMessageId]);
+        }
+      } catch (dbErr) {
+        // Ignore
       }
     }
   } catch (err: any) {

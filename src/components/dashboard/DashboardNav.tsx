@@ -1,9 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { Home, Calendar, Settings, BarChart3, LogOut } from "lucide-react";
+import { Home, Calendar, Settings, BarChart3, LogOut, Mic } from "lucide-react";
 import { Button } from "../ui/button";
 import { useAuth } from "../../auth/AuthProvider";
 import { useState, useEffect } from "react";
 import { userApi } from "../../lib/api";
+import { getActiveMeetingId } from "../../lib/activeMeetingStorage";
 
 const navigation = [
   { name: "Home", href: "/dashboard", icon: Home },
@@ -18,7 +19,14 @@ export function DashboardNav() {
   const { user, signOut } = useAuth();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
-  
+  const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
+
+  // Show "Back to composer" when user has an active meeting and is not already on the live meeting page
+  useEffect(() => {
+    const id = getActiveMeetingId();
+    setActiveMeetingId(id);
+  }, [location.pathname]);
+
   // Load user profile (avatar and display name)
   useEffect(() => {
     if (!user?.id) return;
@@ -30,8 +38,12 @@ export function DashboardNav() {
           setAvatarUrl(profile.avatar_url);
           setDisplayName(profile.display_name);
         }
-      } catch (err) {
-        // Profile might not exist yet, that's okay
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        // 503 = database not configured or unavailable; nav still works with auth user name
+        if (message.includes("Database") || message.includes("503")) {
+          return;
+        }
         console.error("Failed to load profile in nav:", err);
       }
     };
@@ -73,6 +85,15 @@ export function DashboardNav() {
         
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1">
+          {activeMeetingId && !location.pathname.startsWith("/livemeeting") && (
+            <Link
+              to={`/livemeeting?meetingId=${activeMeetingId}`}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors bg-green-600 text-white hover:bg-green-700"
+            >
+              <Mic className="size-5" />
+              <span>Back to composer</span>
+            </Link>
+          )}
           {navigation.map((item) => {
             const isActive = location.pathname === item.href || 
                            location.pathname.startsWith(item.href + "/");

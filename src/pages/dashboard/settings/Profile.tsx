@@ -7,7 +7,7 @@ import { Separator } from "../../../components/ui/separator";
 import { useAuth } from "../../../auth/AuthProvider";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { userApi } from "../../../lib/api";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { AvatarUpload } from "../../../components/profile/AvatarUpload";
 import { getSupabaseClient } from "../../../lib/supabase/client";
 

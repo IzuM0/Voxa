@@ -6,7 +6,7 @@ import { SkeletonCard } from "../../components/loading-states/SkeletonCard";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Plus, Search } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import {
   Dialog,

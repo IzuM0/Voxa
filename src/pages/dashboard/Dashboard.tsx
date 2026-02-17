@@ -9,7 +9,7 @@ import { SkeletonStats } from "../../components/loading-states/SkeletonStats";
 import { SkeletonCard } from "../../components/loading-states/SkeletonCard";
 import { UsageLimitBanner } from "../../components/usage-limits/UsageLimitBanner";
 import { Calendar, Clock, MessageSquare, TrendingUp, Video, CalendarPlus, Upload, Mic, Timer, Monitor, MessageCircle } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import {
   DropdownMenu,
@@ -187,6 +187,9 @@ export default function Dashboard() {
       setMeetingName("");
       setMeetingLink("");
       navigate(`/livemeeting?meetingId=${meeting.id}`);
+      if (meeting.meeting_url) {
+        window.open(meeting.meeting_url, "_blank", "noopener,noreferrer");
+      }
     } catch (err: any) {
       console.error("Failed to create meeting:", err);
       toast.error("Failed to create meeting", {

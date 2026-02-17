@@ -7,7 +7,7 @@ import { Check, CreditCard, AlertCircle } from "lucide-react";
 import { Separator } from "../../../components/ui/separator";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { analyticsApi } from "../../../lib/api";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 const plans = [
   {

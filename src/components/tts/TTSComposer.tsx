@@ -33,7 +33,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "../ui/collapsible";
-import { fetchTtsAudioBuffer } from "../../lib/tts";
+import { fetchTtsAudioBuffer, TTS_AUDIO_FORMAT } from "../../lib/tts";
+import { settingsApi } from "../../lib/api";
 import { ErrorBoundary } from "../ErrorBoundary";
 
 interface TTSComposerProps {
@@ -72,6 +73,32 @@ export function TTSComposer({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Load saved voice settings (preferred voice, speed, pitch) so composer uses user defaults
+  useEffect(() => {
+    let cancelled = false;
+    settingsApi.get().then((settings) => {
+      if (cancelled || !settings) return;
+      const validVoices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
+      if (settings.preferred_voice && validVoices.includes(settings.preferred_voice)) {
+        setVoice(settings.preferred_voice);
+      }
+      const speedNum = Number(settings.default_speed);
+      const pitchNum = Number(settings.default_pitch);
+      if (Number.isFinite(speedNum) && speedNum >= 0.5 && speedNum <= 2) {
+        setSpeed([speedNum]);
+      }
+      if (Number.isFinite(pitchNum) && pitchNum >= 0.5 && pitchNum <= 2) {
+        setPitch([pitchNum]);
+      }
+      if (settings.default_language) {
+        setLanguage(settings.default_language);
+      }
+    }).catch(() => {
+      // Ignore: user may not be logged in or API unavailable; use built-in defaults
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     // Fetch audio output devices (only if API is available)
@@ -182,6 +209,7 @@ export function TTSComposer({
 
     setState("generating");
     setErrorMessage("");
+    let objectUrl: string | null = null;
 
     try {
       if (onSpeech) {
@@ -214,39 +242,131 @@ export function TTSComposer({
         abortRef.current.signal
       );
 
-      // 2) Turn the raw bytes into a Blob and bind it to the hidden <audio> element.
-      const blob = new Blob([audioData], { type: "audio/mpeg" });
-      const objectUrl = URL.createObjectURL(blob);
+      // 2) Blob as WAV (backend Phase 1: 48kHz mono 16-bit PCM)
+      const blob = new Blob([audioData], { type: TTS_AUDIO_FORMAT.mimeType });
+      objectUrl = URL.createObjectURL(blob);
+      const loadStartTime = performance.now();
+
+      // Debug: log blob size and expected format
+      if (import.meta.env.DEV) {
+        console.debug("[TTS Playback] blob size (bytes):", blob.size, "| format: ", TTS_AUDIO_FORMAT.sampleRate, "Hz,", TTS_AUDIO_FORMAT.channels, "ch");
+      }
 
       audioEl.pause();
       audioEl.src = objectUrl;
+      audioEl.volume = 0.8; // Prevent clipping into virtual cable / Meet
+      audioEl.muted = false;
+      audioEl.preload = "auto";
       audioEl.load();
 
-      // 3) Start playback and update UI state to "playing" when audio actually starts.
-      setState("playing");
-      await audioEl.play();
+      // setSinkId before playback (required for virtual audio cable)
+      if (selectedAudioDevice && typeof (audioEl as any).setSinkId === "function") {
+        try {
+          await (audioEl as any).setSinkId(selectedAudioDevice);
+          if (import.meta.env.DEV) {
+            console.debug("[TTS Playback] sinkId:", selectedAudioDevice);
+          }
+        } catch (sinkErr) {
+          console.warn("Could not set audio output device before playback:", sinkErr);
+        }
+      }
 
-      // 4) Wait until playback naturally finishes, the user stops it, or the
-      //    request is aborted, then clean up.
+      // 3) Wait for canplaythrough so audio is fully buffered (avoid buffer underruns)
       await new Promise<void>((resolve, reject) => {
-        const onEnded = () => resolve();
-        const onError = () => reject(new Error("Audio playback error."));
-        const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+        const onCanPlayThrough = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error("Audio failed to load"));
+        };
+        const cleanup = () => {
+          audioEl.removeEventListener("canplaythrough", onCanPlayThrough);
+          audioEl.removeEventListener("error", onError);
+        };
+        if (audioEl.readyState >= 3) {
+          resolve();
+          return;
+        }
+        audioEl.addEventListener("canplaythrough", onCanPlayThrough, { once: true });
+        audioEl.addEventListener("error", onError, { once: true });
+        setTimeout(() => {
+          cleanup();
+          if (audioEl.readyState >= 2) resolve();
+          else reject(new Error("Audio loading timeout"));
+        }, 5000);
+      });
+
+      // Reset playback position before starting
+      audioEl.currentTime = 0;
+
+      setState("playing");
+      const playStartTime = performance.now();
+      try {
+        await audioEl.play();
+        if (import.meta.env.DEV) {
+          console.debug("[TTS Playback] load→play (ms):", Math.round(playStartTime - loadStartTime));
+        }
+      } catch (playErr: unknown) {
+        const isNotAllowed = playErr instanceof Error && (playErr.name === "NotAllowedError" || (playErr as DOMException).name === "NotAllowedError");
+        if (isNotAllowed) {
+          setErrorMessage("Browser blocked audio. Click \"Generate & Speak\" again to play, or check your system/browser volume and output device below.");
+        } else {
+          throw playErr;
+        }
+        setState("error");
+        return;
+      }
+
+      // 4) Wait for ended, pause, or error; clean up listeners and object URL
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          audioEl.removeEventListener("ended", onEnded);
+          audioEl.removeEventListener("pause", onPause);
+          audioEl.removeEventListener("error", onPlaybackError);
+          abortRef.current?.signal.removeEventListener("abort", onAbort);
+        };
+        const onEnded = () => {
+          cleanup();
+          if (import.meta.env.DEV) {
+            console.debug("[TTS Playback] load→ended (ms):", Math.round(performance.now() - loadStartTime));
+          }
+          resolve();
+        };
+        const onPause = () => {
+          cleanup();
+          resolve();
+        };
+        const onPlaybackError = () => {
+          cleanup();
+          reject(new Error("Audio playback error."));
+        };
+        const onAbort = () => {
+          cleanup();
+          reject(new DOMException("Aborted", "AbortError"));
+        };
 
         abortRef.current?.signal.addEventListener("abort", onAbort, { once: true });
         audioEl.addEventListener("ended", onEnded, { once: true });
-        audioEl.addEventListener("error", onError, { once: true });
+        audioEl.addEventListener("pause", onPause, { once: true });
+        audioEl.addEventListener("error", onPlaybackError, { once: true });
       });
 
       setState("success");
       setTimeout(() => setState("idle"), 1500);
-      // Revoke object URL after playback; safe to do after we leave "playing".
-      URL.revokeObjectURL(audioEl.src);
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
     } catch (error) {
       // AbortError is expected when user clicks Stop.
       if (error instanceof DOMException && error.name === "AbortError") {
         setState("idle");
         setAudioProgress(0);
+        if (objectUrl != null) {
+          try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ }
+        }
         return;
       }
       setState("error");
@@ -355,7 +475,7 @@ export function TTSComposer({
   return (
     <div className="space-y-4">
       {/* Hidden audio element used for real playback */}
-      <audio ref={audioRef} className="hidden" />
+      <audio ref={audioRef} className="hidden" preload="auto" />
 
       {/* Status Banner */}
       {state === "playing" && (
@@ -640,9 +760,18 @@ export function TTSComposer({
                       </TooltipPrimitive.Trigger>
                       <TooltipPrimitive.Portal>
                         <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
-                          <p className="text-xs">
-                            Select where the speech audio should play. To route audio into a meeting, select a Virtual Audio Cable here, then select that same cable as your microphone in the meeting.
+                          <p className="text-xs mb-2">
+                            Select where the speech audio should play. To route into Google Meet, select a Virtual Audio Cable here, then set that cable as your microphone in Meet.
                           </p>
+                          <p className="text-xs font-semibold mt-2 pt-2 border-t border-primary-foreground/20">
+                            For clean audio in Meet:
+                          </p>
+                          <ul className="text-xs mt-1 space-y-1 list-disc list-inside">
+                            <li>Disable Google Meet noise cancellation (Meet settings)</li>
+                            <li>Virtual cable buffer size ≥ 512 samples</li>
+                            <li>Use 48000 Hz sample rate in virtual cable / Windows sound device</li>
+                            <li>Disable &quot;Allow applications to take exclusive control&quot; in Windows sound device properties</li>
+                          </ul>
                         </TooltipPrimitive.Content>
                       </TooltipPrimitive.Portal>
                     </TooltipPrimitive.Root>
@@ -677,6 +806,9 @@ export function TTSComposer({
                         ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    If you don&apos;t hear anything, choose your speakers or &quot;Default&quot; and check system volume.
+                  </p>
                 </div>
               ) : (
                 <div className="pt-2 border-t">

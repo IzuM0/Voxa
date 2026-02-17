@@ -25,16 +25,24 @@ export function getPool(): Pool | null {
     }
 
     const timeoutMs = Number(process.env.DB_CONNECTION_TIMEOUT_MS) || 30000;
+    // Keep idle connections shorter than Supabase pooler timeout to avoid "Connection terminated unexpectedly"
+    const idleTimeout = Math.min(20000, 30_000); // 20s default so server doesn't close first
     pool = new Pool({
       connectionString: databaseUrl,
       ssl: { rejectUnauthorized: false },
-      max: 20,
-      idleTimeoutMillis: 30000,
+      max: 10,
+      idleTimeoutMillis: idleTimeout,
       connectionTimeoutMillis: timeoutMs,
+      allowExitOnIdle: false,
     });
 
     pool.on("error", (err) => {
-      console.error("Unexpected error on idle client", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Connection terminated") || msg.includes("idle client")) {
+        console.warn("Database pool: idle connection closed (normal with Supabase pooler). Next request will use a new connection.");
+      } else {
+        console.error("Database pool error:", msg);
+      }
     });
   }
 

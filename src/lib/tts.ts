@@ -135,14 +135,13 @@ export async function fetchTtsAudioBuffer(
   }
 
   if (!res.body) {
-    throw new Error("TTS stream missing response body.");
+    throw new Error("TTS response missing body.");
   }
 
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalLength = 0;
 
-  // Read streamed audio chunks until the response is complete.
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -152,7 +151,6 @@ export async function fetchTtsAudioBuffer(
     }
   }
 
-  // Concatenate all chunks into a single contiguous buffer.
   const result = new Uint8Array(totalLength);
   let offset = 0;
   for (const chunk of chunks) {
@@ -162,4 +160,11 @@ export async function fetchTtsAudioBuffer(
 
   return result;
 }
+
+/** Expected TTS format from backend (Phase 1: 48kHz mono WAV) */
+export const TTS_AUDIO_FORMAT = {
+  mimeType: "audio/wav" as const,
+  sampleRate: 48000,
+  channels: 1,
+} as const;
 

@@ -18,26 +18,38 @@ export interface AuthenticatedRequest extends Request {
 // Note: JWKS client is created per-request in verifySupabaseToken to avoid caching issues
 
 /**
+ * Normalize Supabase URL: trim and remove trailing slash to avoid double slashes
+ */
+function normalizeSupabaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+/**
  * Verify Supabase JWT token with signature verification
  * Uses JWKS (JSON Web Key Set) to verify token signature
  */
 async function verifySupabaseToken(token: string): Promise<{ userId: string; email?: string } | null> {
   try {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-    if (!supabaseUrl) {
-      console.error("SUPABASE_URL not configured for JWT verification");
+    const rawUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    if (!rawUrl || !rawUrl.trim()) {
+      console.error("SUPABASE_URL not configured for JWT verification (set VITE_SUPABASE_URL or SUPABASE_URL in server/.env)");
       return null;
     }
 
-    // Supabase JWKS endpoint is at /auth/v1/.well-known/jwks.json
-    // Try the correct Supabase path first, then fallback
+    const supabaseUrl = normalizeSupabaseUrl(rawUrl);
+
+    // Supabase JWKS endpoint: /auth/v1/.well-known/jwks.json (no trailing slash on base)
     const jwksUrls = [
       `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
       `${supabaseUrl}/.well-known/jwks.json`,
     ];
 
+    if (process.env.NODE_ENV !== "production") {
+      console.log("JWKS URLs to try:", jwksUrls[0]);
+    }
+
     let lastError: Error | null = null;
-    
+
     // Try each JWKS URL
     for (const jwksUrl of jwksUrls) {
       try {
@@ -97,12 +109,17 @@ async function verifySupabaseToken(token: string): Promise<{ userId: string; ema
 
     return null;
   } catch (err) {
-    // Log verification failures for debugging (but don't expose details)
     if (err instanceof Error) {
       console.error("Token verification failed:", err.message);
-      // Log more details in development
       if (process.env.NODE_ENV !== "production") {
         console.error("Error details:", err);
+        const supabaseUrl = normalizeSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "");
+        if (err.message.includes("Expected 200 OK") && supabaseUrl) {
+          console.error(
+            "JWKS hint: Ensure VITE_SUPABASE_URL in server/.env is your project URL without trailing slash, e.g. https://xxxx.supabase.co"
+          );
+          console.error("  JWKS URL should be:", `${supabaseUrl}/auth/v1/.well-known/jwks.json`);
+        }
       }
     } else {
       console.error("Token verification failed:", err);

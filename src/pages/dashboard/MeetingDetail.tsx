@@ -7,7 +7,7 @@ import { Badge } from "../../components/ui/badge";
 import { Calendar, Clock, ExternalLink, Mic, MessageSquare, ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import { Separator } from "../../components/ui/separator";
 import { meetingsApi } from "../../lib/api";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -161,11 +161,17 @@ export default function MeetingDetail() {
                 {meeting.status}
               </Badge>
               {meeting.meeting_url && (
-                <Button variant="outline" size="sm" asChild>
-                  <a href={meeting.meeting_url} target="_blank" rel="noopener noreferrer" className="gap-2">
-                    <ExternalLink className="size-4" />
-                    Open Meeting
-                  </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    window.open(meeting.meeting_url!, "_blank", "noopener,noreferrer");
+                    navigate(`/livemeeting?meetingId=${meeting.id}`);
+                  }}
+                >
+                  <ExternalLink className="size-4" />
+                  Open meeting & composer
                 </Button>
               )}
               <Button

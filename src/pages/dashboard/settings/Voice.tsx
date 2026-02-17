@@ -13,7 +13,7 @@ import {
 import { Play, Loader2 } from "lucide-react";
 import { settingsApi } from "../../../lib/api";
 import { fetchTtsAudioBuffer } from "../../../lib/tts";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 const voices = [
   { id: "alloy", name: "Alloy", description: "Neutral and balanced" },

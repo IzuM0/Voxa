@@ -5,7 +5,7 @@ import { Button } from "../../components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Calendar, Clock, MessageSquare, TrendingUp } from "lucide-react";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import {
   BarChart,
   Bar,

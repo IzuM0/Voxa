@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router";
-import { Calendar, Clock, ExternalLink, Trash2, Loader2 } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Calendar, Clock, ExternalLink, Trash2, Loader2, Video } from "lucide-react";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -43,8 +43,16 @@ export function MeetingCard({
   meetingUrl,
   onDelete,
 }: MeetingCardProps) {
+  const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const hasValidUrl = meetingUrl && meetingUrl !== "#" && (meetingUrl.startsWith("http://") || meetingUrl.startsWith("https://"));
+
+  const handleJoinMeeting = () => {
+    if (hasValidUrl) window.open(meetingUrl, "_blank", "noopener,noreferrer");
+    navigate(`/livemeeting?meetingId=${id}`);
+  };
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return "Not started";
@@ -92,15 +100,24 @@ export function MeetingCard({
             <span>{formatDuration(duration)}</span>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Link to={`/meetings/${id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            className="flex-1 min-w-0 bg-blue-600 hover:bg-blue-700"
+            onClick={handleJoinMeeting}
+            aria-label="Open meeting and composer"
+          >
+            <Video className="size-4 mr-1.5" />
+            {hasValidUrl ? "Join meeting" : "Open composer"}
+          </Button>
+          <Link to={`/meetings/${id}`}>
+            <Button variant="outline" size="sm">
               View Details
             </Button>
           </Link>
-          {meetingUrl && meetingUrl !== "#" && (meetingUrl.startsWith("http://") || meetingUrl.startsWith("https://")) && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={meetingUrl} target="_blank" rel="noopener noreferrer" aria-label="Open meeting link">
+          {hasValidUrl && (
+            <Button variant="outline" size="sm" asChild aria-label="Open meeting link only">
+              <a href={meetingUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="size-4" />
               </a>
             </Button>

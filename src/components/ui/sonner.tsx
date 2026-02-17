@@ -1,4 +1,4 @@
-import { Toaster as Sonner } from "sonner@2.0.3";
+import { Toaster as Sonner } from "sonner";
 
 export function Toaster() {
   return (

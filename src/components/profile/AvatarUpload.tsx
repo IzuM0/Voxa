@@ -3,7 +3,7 @@ import { Button } from "../ui/button";
 import { Loader2, Upload, AlertCircle, CheckCircle2, RotateCcw } from "lucide-react";
 import { uploadAvatar, validateImageFile } from "../../lib/supabase/storage";
 import { userApi } from "../../lib/api";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,

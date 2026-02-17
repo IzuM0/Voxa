@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "../../components/ui/tooltip";
 import { meetingsApi } from "../../lib/api";
+import { clearActiveMeetingStorage, getActiveMeetingId, setActiveMeetingId } from "../../lib/activeMeetingStorage";
 
 export default function LiveMeeting() {
   const [searchParams] = useSearchParams();
@@ -51,7 +52,13 @@ export default function LiveMeeting() {
   };
 
   useEffect(() => {
+    // If no meetingId in URL, try to resume from last active meeting (so user doesn't have to re-add)
     if (!meetingId) {
+      const savedId = getActiveMeetingId();
+      if (savedId) {
+        navigate(`/livemeeting?meetingId=${savedId}`, { replace: true });
+        return;
+      }
       setIsLoading(false);
       navigate("/meetings", { replace: true });
       return;
@@ -62,6 +69,9 @@ export default function LiveMeeting() {
         setIsLoading(true);
         const meetingData = await meetingsApi.get(meetingId);
         setMeeting(meetingData);
+
+        // Persist so user can return to composer without re-adding (cleared only when they click Leave meeting)
+        setActiveMeetingId(meetingId);
 
         // Update meeting status to active and keep UI in sync
         await meetingsApi.update(meetingId, {
@@ -130,6 +140,7 @@ export default function LiveMeeting() {
 
   const handleLeaveMeeting = async () => {
     leftViaButtonRef.current = true;
+    clearActiveMeetingStorage();
     try {
       if (meetingId) {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -147,14 +158,12 @@ export default function LiveMeeting() {
     navigate("/meetings");
   };
 
-  // When user leaves without clicking "Leave" (e.g. back, close tab), mark meeting completed
+  // When user closes tab or navigates away without clicking "Leave", keep meeting active so they can resume
+  // (Only "Leave meeting" marks completed and clears stored meeting id.)
   useEffect(() => {
     return () => {
       if (leftViaButtonRef.current) return;
-      const current = meetingRef.current;
-      if (meetingId && current?.status === "active") {
-        markMeetingCompleted();
-      }
+      // Optionally mark completed on tab close; we don't here so resume works across navigation
     };
   }, [meetingId]);
 
