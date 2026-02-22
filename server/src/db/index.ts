@@ -39,7 +39,9 @@ export function getPool(): Pool | null {
     pool.on("error", (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("Connection terminated") || msg.includes("idle client")) {
-        console.warn("Database pool: idle connection closed (normal with Supabase pooler). Next request will use a new connection.");
+        if (process.env.NODE_ENV === "development") {
+          console.warn("Database pool: idle connection closed (normal with Supabase pooler). Next request will use a new connection.");
+        }
       } else {
         console.error("Database pool error:", msg);
       }
@@ -68,7 +70,9 @@ export async function initializeDatabase(): Promise<void> {
       throw new Error("Failed to create database connection pool");
     }
     await testPool.query("SELECT 1");
-    console.log("✅ Database connection established");
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ Database connection established");
+    }
 
     await runMigrations();
   } catch (err: unknown) {
@@ -85,7 +89,9 @@ export async function closeDatabase(): Promise<void> {
   if (pool) {
     await pool.end();
     pool = null;
-    console.log("Database connection pool closed");
+    if (process.env.NODE_ENV === "development") {
+      console.log("Database connection pool closed");
+    }
   }
 }
 

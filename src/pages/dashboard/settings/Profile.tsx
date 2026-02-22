@@ -48,10 +48,12 @@ export default function SettingsProfile() {
           }
         } catch (err) {
           // Profile might not exist yet, that's okay
-          console.error("Failed to load profile:", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("Failed to load profile:", msg);
         }
       } catch (err) {
-        console.error("Failed to load profile:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to load profile:", msg);
       } finally {
         setIsLoading(false);
       }

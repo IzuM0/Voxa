@@ -22,7 +22,8 @@ async function getAccessToken(): Promise<string | null> {
     const { data } = await supabaseClient.auth.getSession();
     return data.session?.access_token || null;
   } catch (err) {
-    console.error("Failed to get access token:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Failed to get access token:", msg);
     throw err;
   }
 }
@@ -144,7 +145,21 @@ export const meetingsApi = {
   getTtsLogs: async (id: string) => {
     return apiRequest<any[]>(`/api/meetings/${id}/tts-logs`);
   },
+
+  /** Per-meeting analytics (message count, characters, audio seconds, most used voice, average message length) */
+  getAnalytics: async (id: string) => {
+    return apiRequest<MeetingAnalytics>(`/api/meetings/${id}/analytics`);
+  },
 };
+
+export interface MeetingAnalytics {
+  meeting_id: string;
+  total_messages: number;
+  total_characters: number;
+  total_audio_seconds: number;
+  most_used_voice: string | null;
+  average_message_length: number;
+}
 
 // ============================================================================
 // TTS Messages API
@@ -162,6 +177,7 @@ export interface TTSMessage {
   pitch: number;
   status: "pending" | "sent" | "failed";
   error_message: string | null;
+  audio_duration_seconds?: number;
   created_at: string;
   meeting_title?: string | null;
 }

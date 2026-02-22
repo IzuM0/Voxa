@@ -1,11 +1,24 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { authClient, type AuthSession } from "./authClient";
 
+function isSupabaseUnreachableError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("supabase") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("enotfound") ||
+    lower.includes("network") ||
+    lower.includes("unable to connect")
+  );
+}
+
 type AuthContextValue = {
   session: AuthSession;
   user: AuthSession["user"];
   isAuthenticated: boolean;
   isLoading: boolean;
+  isDemoMode: boolean;
   provider: "supabase";
   signIn: (args: { email: string; password: string }) => Promise<void>;
   signUp: (args: { name?: string; email: string; password: string }) => Promise<{ requiresConfirmation: boolean; session: AuthSession }>;
@@ -19,6 +32,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
@@ -27,9 +41,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const initial = await authClient.getSession();
-        if (mounted) setSession(initial);
-      } catch {
-        if (mounted) setSession(null);
+        if (mounted) {
+          setSession(initial);
+          setIsDemoMode(false);
+        }
+      } catch (err) {
+        if (mounted) {
+          setSession(null);
+          if (isSupabaseUnreachableError(err)) {
+            setIsDemoMode(true);
+          }
+        }
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -38,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     unsub = authClient.onAuthStateChange((_event, next) => {
       setSession(next);
       setIsLoading(false);
+      if (next?.user) setIsDemoMode(false);
     });
 
     return () => {
@@ -52,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       isAuthenticated: Boolean(session?.user),
       isLoading,
+      isDemoMode,
       provider: "supabase",
       signIn: (args) => authClient.signInWithPassword(args),
       signUp: (args) => authClient.signUp(args),
@@ -59,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut: () => authClient.signOut(),
       resetPassword: (args) => authClient.resetPassword(args),
     };
-  }, [session, isLoading]);
+  }, [session, isLoading, isDemoMode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

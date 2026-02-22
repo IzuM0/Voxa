@@ -43,8 +43,8 @@ export const ttsRateLimiter = rateLimit({
     if (authReq.userId) {
       return authReq.userId;
     }
-    // Use ipKeyGenerator helper for proper IPv6 handling
-    return ipKeyGenerator(req);
+    // ipKeyGenerator(ip: string) — pass request IP for proper IPv6 handling
+    return ipKeyGenerator(req.ip ?? 'unknown');
   },
   handler: (req: Request, res) => {
     const windowMinutes = Math.ceil(TTS_RATE_LIMIT_WINDOW_MS / 60000);
@@ -77,7 +77,6 @@ export const apiRateLimiter = rateLimit({
     if (authReq.userId) {
       return authReq.userId;
     }
-    // Use ipKeyGenerator helper for proper IPv6 handling
-    return ipKeyGenerator(req);
+    return ipKeyGenerator(req.ip ?? 'unknown');
   },
 });

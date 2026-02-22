@@ -26,7 +26,7 @@ export default function SignIn() {
     } catch (err: any) {
       // Extract detailed error message from Supabase error object
       const errorMessage = err?.message || err?.error_description || "Sign in failed.";
-      console.error("Sign in error:", err);
+      console.error("Sign in error:", errorMessage);
       setError(errorMessage);
     } finally {
       setIsLoading(false);

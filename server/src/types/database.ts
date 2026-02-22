@@ -42,6 +42,7 @@ export interface TTSMessage {
   pitch: number; // Pitch multiplier (0.5 to 2.0)
   status: TTSMessageStatus;
   error_message: string | null;
+  audio_duration_seconds: number; // Duration of generated audio in seconds (0 if unknown)
   created_at: Date;
 }
 

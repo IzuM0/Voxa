@@ -103,7 +103,8 @@ export function AvatarUpload({
         setUploadState("idle");
       }, 2000);
     } catch (err: any) {
-      console.error("Avatar upload failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Avatar upload failed:", msg);
       
       // Check error type for better messaging
       const errorMessage = err.message || "Failed to upload avatar";

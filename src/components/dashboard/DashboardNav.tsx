@@ -44,7 +44,7 @@ export function DashboardNav() {
         if (message.includes("Database") || message.includes("503")) {
           return;
         }
-        console.error("Failed to load profile in nav:", err);
+        console.error("Failed to load profile in nav:", message);
       }
     };
 

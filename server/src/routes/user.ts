@@ -56,7 +56,8 @@ router.get("/profile", requireAuth, async (req: AuthenticatedRequest, res: Respo
 
     res.json(profile);
   } catch (err: any) {
-    console.error("Error fetching user profile:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching user profile:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({
         error: "Database is temporarily unavailable. Check your network and try again.",
@@ -131,7 +132,8 @@ router.put("/profile", requireAuth, async (req: AuthenticatedRequest, res: Respo
 
     res.json(updated);
   } catch (err: any) {
-    console.error("Error updating user profile:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error updating user profile:", msg);
     res.status(500).json({ error: err.message || "Failed to update user profile" });
   }
 });
@@ -167,7 +169,8 @@ router.delete("/", requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     res.status(204).send();
   } catch (err: any) {
-    console.error("Error deleting user account:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error deleting user account:", msg);
     res.status(500).json({ error: err.message || "Failed to delete user account" });
   }
 });

@@ -32,7 +32,7 @@ export async function convertMp3ToWav(mp3Buffer: Buffer): Promise<Buffer> {
     });
     proc.stderr.on("data", (data: Buffer) => {
       // Log stderr for debugging (ffmpeg often writes progress to stderr)
-      if (process.env.NODE_ENV !== "production") {
+      if (process.env.NODE_ENV === "development") {
         const msg = data.toString().trim();
         if (msg && !msg.startsWith("frame=")) {
           console.debug("[ffmpeg]", msg);
@@ -71,3 +71,20 @@ export async function convertMp3ToWav(mp3Buffer: Buffer): Promise<Buffer> {
 
 export const WAV_SAMPLE_RATE = TARGET_SAMPLE_RATE;
 export const WAV_CHANNELS = TARGET_CHANNELS;
+
+/** Typical WAV header size (44 bytes for PCM) */
+const WAV_HEADER_BYTES = 44;
+
+/** Bytes per second: 48kHz * 1 channel * 2 bytes per sample */
+const BYTES_PER_SECOND = TARGET_SAMPLE_RATE * TARGET_CHANNELS * 2;
+
+/**
+ * Compute audio duration in seconds from a WAV buffer (48kHz mono 16-bit).
+ * Returns 0 if buffer is too short or invalid.
+ */
+export function getWavDurationSeconds(wavBuffer: Buffer): number {
+  if (!wavBuffer || wavBuffer.length <= WAV_HEADER_BYTES) return 0;
+  const dataBytes = wavBuffer.length - WAV_HEADER_BYTES;
+  const seconds = dataBytes / BYTES_PER_SECOND;
+  return Math.max(0, Math.round(seconds * 100) / 100); // Round to 2 decimal places
+}

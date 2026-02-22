@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Calendar, Clock, ExternalLink, Mic, MessageSquare, ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import { Separator } from "../../components/ui/separator";
-import { meetingsApi } from "../../lib/api";
+import { meetingsApi, type MeetingAnalytics } from "../../lib/api";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -40,6 +40,7 @@ export default function MeetingDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [meeting, setMeeting] = useState<any>(null);
   const [ttsLogs, setTtsLogs] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<MeetingAnalytics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -52,9 +53,10 @@ export default function MeetingDetail() {
         setIsLoading(true);
         setError(null);
 
-        const [meetingData, logsData] = await Promise.all([
+        const [meetingData, logsData, analyticsData] = await Promise.all([
           meetingsApi.get(id).catch(() => null),
           meetingsApi.getTtsLogs(id).catch(() => []),
+          meetingsApi.getAnalytics(id).catch(() => null),
         ]);
 
         if (!meetingData) {
@@ -64,8 +66,10 @@ export default function MeetingDetail() {
 
         setMeeting(meetingData);
         setTtsLogs(logsData || []);
+        setAnalytics(analyticsData ?? null);
       } catch (err: any) {
-        console.error("Failed to fetch meeting:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to fetch meeting:", msg);
         setError(err.message || "Failed to load meeting");
       } finally {
         setIsLoading(false);
@@ -106,8 +110,13 @@ export default function MeetingDetail() {
     );
   }
 
-  const totalCharacters = ttsLogs.reduce((sum, log) => sum + (log.text_length || 0), 0);
-  
+  /** Format total audio seconds as mm:ss for display */
+  const formatSpokenTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
   const platformDisplay = meeting.platform === "google-meet" 
     ? "Google Meet" 
     : meeting.platform === "microsoft-teams" 
@@ -217,8 +226,8 @@ export default function MeetingDetail() {
             </AlertDialogContent>
           </AlertDialog>
           
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          {/* Stats Cards — driven by GET /api/meetings/:id/analytics */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             <Card>
               <CardContent className="pt-6 pb-6">
                 <div className="flex items-center gap-3">
@@ -226,13 +235,12 @@ export default function MeetingDetail() {
                     <Clock className="size-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Duration</p>
-                    <p className="text-xl font-semibold">{meeting.duration ? `${Math.floor(meeting.duration / 60)} min` : "N/A"}</p>
+                    <p className="text-sm text-muted-foreground">Meeting duration</p>
+                    <p className="text-xl font-semibold">{meeting.duration != null ? `${Math.floor(meeting.duration / 60)} min` : "N/A"}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            
             <Card>
               <CardContent className="pt-6 pb-6">
                 <div className="flex items-center gap-3">
@@ -240,13 +248,12 @@ export default function MeetingDetail() {
                     <MessageSquare className="size-5 text-purple-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Messages</p>
-                    <p className="text-xl font-semibold">{ttsLogs.length}</p>
+                    <p className="text-sm text-muted-foreground">Total messages</p>
+                    <p className="text-xl font-semibold">{analytics?.total_messages ?? 0}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            
             <Card>
               <CardContent className="pt-6 pb-6">
                 <div className="flex items-center gap-3">
@@ -254,22 +261,47 @@ export default function MeetingDetail() {
                     <Mic className="size-5 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Characters</p>
-                    <p className="text-xl font-semibold">{totalCharacters.toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">Total characters</p>
+                    <p className="text-xl font-semibold">{(analytics?.total_characters ?? 0).toLocaleString()}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            
+            <Card>
+              <CardContent className="pt-6 pb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <Clock className="size-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total spoken time</p>
+                    <p className="text-xl font-semibold">{analytics != null ? formatSpokenTime(analytics.total_audio_seconds) : "0:00"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             <Card>
               <CardContent className="pt-6 pb-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <Calendar className="size-5 text-orange-600" />
+                    <Mic className="size-5 text-orange-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Started</p>
-                    <p className="text-xl font-semibold">{meeting.started_at ? new Date(meeting.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Not started"}</p>
+                    <p className="text-sm text-muted-foreground">Most used voice</p>
+                    <p className="text-xl font-semibold capitalize">{analytics?.most_used_voice ?? "—"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 pb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+                    <MessageSquare className="size-5 text-slate-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Avg message length</p>
+                    <p className="text-xl font-semibold">{analytics != null ? Math.round(analytics.average_message_length) : 0} chars</p>
                   </div>
                 </div>
               </CardContent>

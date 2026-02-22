@@ -40,7 +40,8 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
 
     res.json(settings);
   } catch (err: any) {
-    console.error("Error fetching user settings:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching user settings:", msg);
     res.status(500).json({ error: err.message || "Failed to fetch user settings" });
   }
 });
@@ -125,7 +126,8 @@ router.put("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
 
     res.json(updated);
   } catch (err: any) {
-    console.error("Error updating user settings:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error updating user settings:", msg);
     res.status(500).json({ error: err.message || "Failed to update user settings" });
   }
 });

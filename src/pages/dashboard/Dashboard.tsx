@@ -144,7 +144,8 @@ export default function Dashboard() {
       setStats(statsData);
       setPlatforms(platformsData || []);
     } catch (err) {
-      console.error("Failed to fetch dashboard data:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to fetch dashboard data:", msg);
       setHasError(true);
       setMeetings([]);
       setStats(null);
@@ -191,7 +192,8 @@ export default function Dashboard() {
         window.open(meeting.meeting_url, "_blank", "noopener,noreferrer");
       }
     } catch (err: any) {
-      console.error("Failed to create meeting:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to create meeting:", msg);
       toast.error("Failed to create meeting", {
         description: err?.message || "Please try again.",
       });
@@ -229,7 +231,8 @@ export default function Dashboard() {
       setMeetings(updated);
       toast.success("Meeting scheduled");
     } catch (err: any) {
-      console.error("Failed to schedule meeting:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to schedule meeting:", msg);
       toast.error("Failed to schedule meeting", {
         description: err?.message || "Please try again.",
       });

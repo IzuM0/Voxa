@@ -42,7 +42,8 @@ router.get("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =>
 
     res.json(meetings);
   } catch (err: any) {
-    console.error("Error fetching meetings:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching meetings:", msg);
     res.status(500).json({ error: err.message || "Failed to fetch meetings" });
   }
 });
@@ -77,8 +78,76 @@ router.get("/:id/tts-logs", requireAuth, async (req: AuthenticatedRequest, res: 
 
     res.json(messages);
   } catch (err: any) {
-    console.error("Error fetching TTS logs:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching TTS logs:", msg);
     res.status(500).json({ error: err.message || "Failed to fetch TTS logs" });
+  }
+});
+
+/**
+ * GET /api/meetings/:id/analytics
+ * Per-meeting analytics: message count, characters, audio seconds, most used voice, average message length.
+ * All aggregation is done in SQL; scoped strictly to the authenticated user.
+ */
+router.get("/:id/analytics", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const { id } = req.params;
+    const pool = getPool();
+
+    if (!pool) {
+      return res.status(503).json({ error: "Database not configured" });
+    }
+
+    const meeting = await queryOne<Meeting>(
+      "SELECT id FROM meetings WHERE id = $1 AND user_id = $2",
+      [id, userId]
+    );
+    if (!meeting) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    const rows = await query<{
+      total_messages: string;
+      total_characters: string;
+      total_audio_seconds: string;
+      most_used_voice: string | null;
+      average_message_length: string;
+    }>(
+      `SELECT
+         COUNT(*)::text AS total_messages,
+         COALESCE(SUM(text_length), 0)::text AS total_characters,
+         COALESCE(SUM(audio_duration_seconds), 0)::text AS total_audio_seconds,
+         (SELECT voice_used FROM tts_messages t2
+          WHERE t2.meeting_id = $1 AND t2.user_id = $2
+          GROUP BY voice_used ORDER BY COUNT(*) DESC LIMIT 1) AS most_used_voice,
+         CASE WHEN COUNT(*) > 0 THEN (SUM(text_length)::float / COUNT(*))::text ELSE '0' END AS average_message_length
+       FROM tts_messages
+       WHERE meeting_id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+
+    const row = rows[0];
+    const totalMessages = Math.max(0, parseInt(row?.total_messages ?? "0", 10));
+    const totalCharacters = Math.max(0, parseInt(row?.total_characters ?? "0", 10));
+    const totalAudioSeconds = Math.max(0, parseFloat(row?.total_audio_seconds ?? "0") || 0);
+    const avgMessageLength = totalMessages > 0 ? totalCharacters / totalMessages : 0;
+
+    res.json({
+      meeting_id: id,
+      total_messages: totalMessages,
+      total_characters: totalCharacters,
+      total_audio_seconds: totalAudioSeconds,
+      most_used_voice: row?.most_used_voice ?? null,
+      average_message_length: Math.round(avgMessageLength * 100) / 100,
+    });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching meeting analytics:", msg);
+    if (isDatabaseConnectionError(err)) {
+      return res.status(503).json({ error: "Database is temporarily unavailable." });
+    }
+    res.status(500).json({ error: err.message || "Failed to fetch meeting analytics" });
   }
 });
 
@@ -107,7 +176,8 @@ router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     res.json(meeting);
   } catch (err: any) {
-    console.error("Error fetching meeting:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching meeting:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({
         error: "Database is temporarily unavailable. Check your network and try again.",
@@ -165,7 +235,8 @@ router.post("/", requireAuth, async (req: AuthenticatedRequest, res: Response) =
 
     res.status(201).json(result);
   } catch (err: any) {
-    console.error("Error creating meeting:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error creating meeting:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({
         error: "Database is temporarily unavailable. Check your network and server/.env (DATABASE_URL, DB_CONNECTION_TIMEOUT_MS), then try again.",
@@ -267,7 +338,8 @@ router.put("/:id", requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     res.json(updated);
   } catch (err: any) {
-    console.error("Error updating meeting:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error updating meeting:", msg);
     res.status(500).json({ error: err.message || "Failed to update meeting" });
   }
 });
@@ -301,7 +373,8 @@ router.delete("/:id", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     res.status(204).send();
   } catch (err: any) {
-    console.error("Error deleting meeting:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error deleting meeting:", msg);
     res.status(500).json({ error: err.message || "Failed to delete meeting" });
   }
 });

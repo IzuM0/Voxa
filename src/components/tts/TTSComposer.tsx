@@ -36,6 +36,7 @@ import {
 import { fetchTtsAudioBuffer, TTS_AUDIO_FORMAT } from "../../lib/tts";
 import { settingsApi } from "../../lib/api";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { QuickPhrases } from "./QuickPhrases";
 
 interface TTSComposerProps {
   onSpeech?: (text: string, options: TTSOptions) => Promise<void>;
@@ -52,6 +53,62 @@ interface TTSOptions {
 }
 
 type TTSState = "idle" | "generating" | "playing" | "success" | "error";
+
+const ERROR_MESSAGES = {
+  rateLimit: "⏱️ Slow down! Wait a moment before speaking again.",
+  quotaExceeded: "📊 Daily limit reached. Upgrade or try tomorrow.",
+  network: "🌐 Network issue. Check your connection.",
+  ffmpeg: "🔧 Server setup issue. Contact support.",
+  invalidText: "✏️ Please enter some text to speak.",
+  default: "❌ Something went wrong. Please try again.",
+} as const;
+
+function getUserFriendlyError(error: unknown): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "Something went wrong.";
+  const lower = raw.toLowerCase();
+
+  if (
+    (error as any)?.statusCode === 429 ||
+    lower.includes("too many requests") ||
+    lower.includes("rate limit")
+  ) {
+    return ERROR_MESSAGES.rateLimit;
+  }
+  if (
+    lower.includes("insufficient_quota") ||
+    lower.includes("exceeded your current quota") ||
+    lower.includes("quota exceeded") ||
+    lower.includes("daily limit")
+  ) {
+    return ERROR_MESSAGES.quotaExceeded;
+  }
+  if (
+    lower.includes("network") ||
+    lower.includes("fetch") ||
+    lower.includes("connection") ||
+    lower.includes("failed to fetch") ||
+    ((error as any)?.name === "TypeError" && lower.includes("network"))
+  ) {
+    return ERROR_MESSAGES.network;
+  }
+  if (lower.includes("ffmpeg") || (lower.includes("invalid data") && lower.includes("decode"))) {
+    return ERROR_MESSAGES.ffmpeg;
+  }
+  if (
+    (lower.includes("empty") && (lower.includes("text") || lower.includes("input"))) ||
+    lower.includes("please enter") ||
+    lower.includes("text is required") ||
+    lower.includes("input is required")
+  ) {
+    return ERROR_MESSAGES.invalidText;
+  }
+  return ERROR_MESSAGES.default;
+}
 
 export function TTSComposer({
   onSpeech,
@@ -103,7 +160,9 @@ export function TTSComposer({
   useEffect(() => {
     // Fetch audio output devices (only if API is available)
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-      console.warn("Audio device enumeration not available in this browser/context");
+      if (import.meta.env.DEV) {
+        console.warn("Audio device enumeration not available in this browser/context");
+      }
       return;
     }
 
@@ -121,7 +180,10 @@ export function TTSComposer({
           }
         }
       } catch (e) {
-        console.error("Failed to list audio devices", e);
+        if (import.meta.env.DEV) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error("Failed to list audio devices", msg);
+        }
         // Don't crash - just leave devices empty
         setAudioDevices([]);
       }
@@ -140,7 +202,10 @@ export function TTSComposer({
         }
       };
     } catch (e) {
-      console.warn("Could not listen for device changes", e);
+      if (import.meta.env.DEV) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("Could not listen for device changes", msg);
+      }
       return;
     }
   }, []);
@@ -148,12 +213,14 @@ export function TTSComposer({
   useEffect(() => {
     // Attach sink ID when selected device changes (if supported)
     if (!selectedAudioDevice) return;
-    
+
     const audioEl = audioRef.current as any; // Cast to any because setSinkId is not in standard TS lib yet
     if (audioEl && typeof audioEl.setSinkId === "function") {
       audioEl.setSinkId(selectedAudioDevice).catch((err: any) => {
-        // Silently fail - browser may not support setSinkId or device may not be available
-        console.warn("Could not set audio output device:", err);
+        if (import.meta.env.DEV) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn("Could not set audio output device:", msg);
+        }
       });
     }
   }, [selectedAudioDevice]);
@@ -267,7 +334,10 @@ export function TTSComposer({
             console.debug("[TTS Playback] sinkId:", selectedAudioDevice);
           }
         } catch (sinkErr) {
-          console.warn("Could not set audio output device before playback:", sinkErr);
+          if (import.meta.env.DEV) {
+            const msg = sinkErr instanceof Error ? sinkErr.message : String(sinkErr);
+            console.warn("Could not set audio output device before playback:", msg);
+          }
         }
       }
 
@@ -370,51 +440,7 @@ export function TTSComposer({
         return;
       }
       setState("error");
-      const rawMessage = error instanceof Error ? error.message : "Failed to generate speech. Please try again.";
-      
-      // Check for rate limit error (429)
-      const isRateLimitError = 
-        (error as any)?.statusCode === 429 ||
-        rawMessage.toLowerCase().includes("too many requests") ||
-        rawMessage.toLowerCase().includes("rate limit");
-      
-      const isQuotaError =
-        !isRateLimitError &&
-        (rawMessage.toLowerCase().includes("insufficient_quota") ||
-          rawMessage.toLowerCase().includes("exceeded your current quota"));
-      
-      const isProviderError =
-        !isRateLimitError &&
-        !isQuotaError &&
-        (rawMessage.toLowerCase().includes("tts provider") ||
-          rawMessage.toLowerCase().includes("openai_api_key") ||
-          rawMessage.toLowerCase().includes("500") ||
-          rawMessage.toLowerCase().includes("not configured"));
-      
-      if (isRateLimitError) {
-        const retryAfter = (error as any)?.retryAfter;
-        if (retryAfter) {
-          const seconds = parseInt(retryAfter, 10);
-          const minutes = Math.ceil(seconds / 60);
-          setErrorMessage(
-            `Rate limit exceeded. Please wait ${minutes} minute${minutes !== 1 ? 's' : ''} before trying again.`
-          );
-        } else {
-          setErrorMessage(
-            "Too many requests. Please wait a moment and try again."
-          );
-        }
-      } else if (isQuotaError) {
-        setErrorMessage(
-          "Your OpenAI account has no remaining quota. Add a payment method at https://platform.openai.com/account/billing to use text-to-speech."
-        );
-      } else if (isProviderError) {
-        setErrorMessage(
-          "The server's text-to-speech service isn't configured or is temporarily unavailable. Make sure OPENAI_API_KEY is set in the server .env file and the server has been restarted."
-        );
-      } else {
-        setErrorMessage(rawMessage);
-      }
+      setErrorMessage(getUserFriendlyError(error));
     }
   };
 
@@ -551,6 +577,12 @@ export function TTSComposer({
         </div>
       )}
 
+      {/* Quick Phrases */}
+      <QuickPhrases
+        onSelect={(phrase) => setText(phrase)}
+        disabled={disabled || isProcessing}
+      />
+
       {/* Main Input Area */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -673,150 +705,150 @@ export function TTSComposer({
           >
             <TooltipProvider>
               <div className="space-y-3">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="speed-slider" className="text-sm flex items-center gap-2">
-                    Speech Speed
-                    <TooltipPrimitive.Root>
-                      <TooltipPrimitive.Trigger asChild>
-                        <Info className="size-3.5 text-muted-foreground cursor-help" />
-                      </TooltipPrimitive.Trigger>
-                      <TooltipPrimitive.Portal>
-                        <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
-                          <p className="text-xs">
-                            Adjust how fast your voice speaks. 1.0 is normal speed, lower is slower, higher is faster.
-                          </p>
-                        </TooltipPrimitive.Content>
-                      </TooltipPrimitive.Portal>
-                    </TooltipPrimitive.Root>
-                  </Label>
-                <span className="text-sm font-medium text-muted-foreground">
-                  {speed && speed.length > 0 ? speed[0].toFixed(1) : "1.0"}x
-                </span>
-              </div>
-              <Slider
-                id="speed-slider"
-                min={0.5}
-                max={2.0}
-                step={0.1}
-                value={speed && speed.length > 0 ? speed : [1.0]}
-                onValueChange={setSpeed}
-                disabled={disabled || isProcessing}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Slower (0.5x)</span>
-                <span>Normal (1.0x)</span>
-                <span>Faster (2.0x)</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="pitch-slider" className="text-sm flex items-center gap-2">
-                  Voice Pitch
-                  <TooltipPrimitive.Root>
-                    <TooltipPrimitive.Trigger asChild>
-                      <Info className="size-3.5 text-muted-foreground cursor-help" />
-                    </TooltipPrimitive.Trigger>
-                    <TooltipPrimitive.Portal>
-                      <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
-                        <p className="text-xs">
-                          Adjust the pitch of your voice. 1.0 is normal pitch, lower is deeper, higher is more high-pitched.
-                        </p>
-                      </TooltipPrimitive.Content>
-                    </TooltipPrimitive.Portal>
-                  </TooltipPrimitive.Root>
-                </Label>
-                <span className="text-sm font-medium text-muted-foreground">
-                  {pitch && pitch.length > 0 ? pitch[0].toFixed(1) : "1.0"}x
-                </span>
-              </div>
-              <Slider
-                id="pitch-slider"
-                min={0.5}
-                max={2.0}
-                step={0.1}
-                value={pitch && pitch.length > 0 ? pitch : [1.0]}
-                onValueChange={setPitch}
-                disabled={disabled || isProcessing}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Deeper (0.5x)</span>
-                <span>Normal (1.0x)</span>
-                <span>Higher (2.0x)</span>
-              </div>
-            </div>
-
-            {/* Audio Output Selector */}
-              {audioDevices.length > 0 ? (
-                <div className="space-y-2 pt-2 border-t">
-                  <Label className="text-sm flex items-center gap-2">
-                    Audio Output
-                    <TooltipPrimitive.Root>
-                      <TooltipPrimitive.Trigger asChild>
-                        <Info className="size-3.5 text-muted-foreground cursor-help" />
-                      </TooltipPrimitive.Trigger>
-                      <TooltipPrimitive.Portal>
-                        <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
-                          <p className="text-xs mb-2">
-                            Select where the speech audio should play. To route into Google Meet, select a Virtual Audio Cable here, then set that cable as your microphone in Meet.
-                          </p>
-                          <p className="text-xs font-semibold mt-2 pt-2 border-t border-primary-foreground/20">
-                            For clean audio in Meet:
-                          </p>
-                          <ul className="text-xs mt-1 space-y-1 list-disc list-inside">
-                            <li>Disable Google Meet noise cancellation (Meet settings)</li>
-                            <li>Virtual cable buffer size ≥ 512 samples</li>
-                            <li>Use 48000 Hz sample rate in virtual cable / Windows sound device</li>
-                            <li>Disable &quot;Allow applications to take exclusive control&quot; in Windows sound device properties</li>
-                          </ul>
-                        </TooltipPrimitive.Content>
-                      </TooltipPrimitive.Portal>
-                    </TooltipPrimitive.Root>
-                  </Label>
-                  <Select
-                    value={
-                      selectedAudioDevice && 
-                      selectedAudioDevice.trim() !== "" &&
-                      audioDevices.some(d => d.deviceId === selectedAudioDevice)
-                        ? selectedAudioDevice
-                        : audioDevices[0]?.deviceId && audioDevices[0].deviceId.trim() !== ""
-                          ? audioDevices[0].deviceId
-                          : undefined
-                    }
-                    onValueChange={(value) => {
-                      if (value && value.trim() !== "") {
-                        setSelectedAudioDevice(value);
-                      }
-                    }}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="speed-slider" className="text-sm flex items-center gap-2">
+                      Speech Speed
+                      <TooltipPrimitive.Root>
+                        <TooltipPrimitive.Trigger asChild>
+                          <Info className="size-3.5 text-muted-foreground cursor-help" />
+                        </TooltipPrimitive.Trigger>
+                        <TooltipPrimitive.Portal>
+                          <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
+                            <p className="text-xs">
+                              Adjust how fast your voice speaks. 1.0 is normal speed, lower is slower, higher is faster.
+                            </p>
+                          </TooltipPrimitive.Content>
+                        </TooltipPrimitive.Portal>
+                      </TooltipPrimitive.Root>
+                    </Label>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {speed && speed.length > 0 ? speed[0].toFixed(1) : "1.0"}x
+                    </span>
+                  </div>
+                  <Slider
+                    id="speed-slider"
+                    min={0.5}
+                    max={2.0}
+                    step={0.1}
+                    value={speed && speed.length > 0 ? speed : [1.0]}
+                    onValueChange={setSpeed}
                     disabled={disabled || isProcessing}
-                  >
-                    <SelectTrigger id="audio-output" aria-label="Audio output device selection">
-                      <SelectValue placeholder="Select output device" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {audioDevices
-                        .filter((device) => device.deviceId && device.deviceId.trim() !== "")
-                        .map((device) => (
-                          <SelectItem key={device.deviceId} value={device.deviceId}>
-                            {device.label || `Speaker (${device.deviceId.slice(0, 4)}...)`}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1.5">
-                    If you don&apos;t hear anything, choose your speakers or &quot;Default&quot; and check system volume.
-                  </p>
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Slower (0.5x)</span>
+                    <span>Normal (1.0x)</span>
+                    <span>Faster (2.0x)</span>
+                  </div>
                 </div>
-              ) : (
-                <div className="pt-2 border-t">
-                  <p className="text-xs text-muted-foreground">
-                    Audio output device selection is not available in this browser. Audio will play on your default speakers.
-                  </p>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="pitch-slider" className="text-sm flex items-center gap-2">
+                      Voice Pitch
+                      <TooltipPrimitive.Root>
+                        <TooltipPrimitive.Trigger asChild>
+                          <Info className="size-3.5 text-muted-foreground cursor-help" />
+                        </TooltipPrimitive.Trigger>
+                        <TooltipPrimitive.Portal>
+                          <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
+                            <p className="text-xs">
+                              Adjust the pitch of your voice. 1.0 is normal pitch, lower is deeper, higher is more high-pitched.
+                            </p>
+                          </TooltipPrimitive.Content>
+                        </TooltipPrimitive.Portal>
+                      </TooltipPrimitive.Root>
+                    </Label>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {pitch && pitch.length > 0 ? pitch[0].toFixed(1) : "1.0"}x
+                    </span>
+                  </div>
+                  <Slider
+                    id="pitch-slider"
+                    min={0.5}
+                    max={2.0}
+                    step={0.1}
+                    value={pitch && pitch.length > 0 ? pitch : [1.0]}
+                    onValueChange={setPitch}
+                    disabled={disabled || isProcessing}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Deeper (0.5x)</span>
+                    <span>Normal (1.0x)</span>
+                    <span>Higher (2.0x)</span>
+                  </div>
                 </div>
-              )}
+
+                {/* Audio Output Selector */}
+                {audioDevices.length > 0 ? (
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-sm flex items-center gap-2">
+                      Audio Output
+                      <TooltipPrimitive.Root>
+                        <TooltipPrimitive.Trigger asChild>
+                          <Info className="size-3.5 text-muted-foreground cursor-help" />
+                        </TooltipPrimitive.Trigger>
+                        <TooltipPrimitive.Portal>
+                          <TooltipPrimitive.Content className="z-50 w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 max-w-xs">
+                            <p className="text-xs mb-2">
+                              Select where the speech audio should play. To route into Google Meet, select a Virtual Audio Cable here, then set that cable as your microphone in Meet.
+                            </p>
+                            <p className="text-xs font-semibold mt-2 pt-2 border-t border-primary-foreground/20">
+                              For clean audio in Meet:
+                            </p>
+                            <ul className="text-xs mt-1 space-y-1 list-disc list-inside">
+                              <li>Disable Google Meet noise cancellation (Meet settings)</li>
+                              <li>Virtual cable buffer size ≥ 512 samples</li>
+                              <li>Use 48000 Hz sample rate in virtual cable / Windows sound device</li>
+                              <li>Disable &quot;Allow applications to take exclusive control&quot; in Windows sound device properties</li>
+                            </ul>
+                          </TooltipPrimitive.Content>
+                        </TooltipPrimitive.Portal>
+                      </TooltipPrimitive.Root>
+                    </Label>
+                    <Select
+                      value={
+                        selectedAudioDevice &&
+                          selectedAudioDevice.trim() !== "" &&
+                          audioDevices.some(d => d.deviceId === selectedAudioDevice)
+                          ? selectedAudioDevice
+                          : audioDevices[0]?.deviceId && audioDevices[0].deviceId.trim() !== ""
+                            ? audioDevices[0].deviceId
+                            : undefined
+                      }
+                      onValueChange={(value) => {
+                        if (value && value.trim() !== "") {
+                          setSelectedAudioDevice(value);
+                        }
+                      }}
+                      disabled={disabled || isProcessing}
+                    >
+                      <SelectTrigger id="audio-output" aria-label="Audio output device selection">
+                        <SelectValue placeholder="Select output device" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {audioDevices
+                          .filter((device) => device.deviceId && device.deviceId.trim() !== "")
+                          .map((device) => (
+                            <SelectItem key={device.deviceId} value={device.deviceId}>
+                              {device.label || `Speaker (${device.deviceId.slice(0, 4)}...)`}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      If you don&apos;t hear anything, choose your speakers or &quot;Default&quot; and check system volume.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="pt-2 border-t">
+                    <p className="text-xs text-muted-foreground">
+                      Audio output device selection is not available in this browser. Audio will play on your default speakers.
+                    </p>
+                  </div>
+                )}
               </div>
             </TooltipProvider>
           </ErrorBoundary>
@@ -829,12 +861,12 @@ export function TTSComposer({
         // Disable when text is invalid or a generation request is in progress.
         disabled={state !== "playing" && (isDisabled || state === "generating")}
         className={`w-full gap-2 ${state === "error"
-            ? "bg-red-600 hover:bg-red-700"
-            : state === "success"
-              ? "bg-green-600 hover:bg-green-700"
-              : state === "playing"
-                ? "bg-orange-600 hover:bg-orange-700"
-                : "bg-blue-600 hover:bg-blue-700"
+          ? "bg-red-600 hover:bg-red-700"
+          : state === "success"
+            ? "bg-green-600 hover:bg-green-700"
+            : state === "playing"
+              ? "bg-orange-600 hover:bg-orange-700"
+              : "bg-blue-600 hover:bg-blue-700"
           }`}
         size="lg"
       >

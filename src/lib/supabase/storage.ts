@@ -75,7 +75,8 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
     });
 
   if (error) {
-    console.error("Avatar upload error:", error);
+    const msg = error?.message ?? String(error);
+    console.error("Avatar upload error:", msg);
     
     // Provide helpful error message for bucket not found
     if (error.message?.includes("Bucket not found") || error.message?.includes("not found")) {
@@ -133,7 +134,8 @@ export async function deleteAvatar(userId: string): Promise<void> {
     .remove([fileName]);
 
   if (error) {
-    console.error("Avatar deletion error:", error);
+    const msg = error?.message ?? String(error);
+    console.error("Avatar deletion error:", msg);
     throw new Error(`Failed to delete avatar: ${error.message}`);
   }
 }

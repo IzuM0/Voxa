@@ -161,7 +161,8 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((err) => {
-      console.error("Migration process failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Migration process failed:", msg);
       process.exit(1);
     });
 }

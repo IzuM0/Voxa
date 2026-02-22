@@ -82,7 +82,8 @@ export default function Analytics() {
 
       setDailyActivity(Array.isArray(activityData) ? activityData : []);
     } catch (err) {
-      console.error("Failed to fetch analytics:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to fetch analytics:", msg);
       setHasError(true);
       setStats(null);
       setMonthlyUsage([]);

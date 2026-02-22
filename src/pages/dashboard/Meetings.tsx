@@ -57,7 +57,8 @@ export default function Meetings() {
         const data = await meetingsApi.list({ limit: 100 });
         setMeetings(data || []);
       } catch (err: any) {
-        console.error("Failed to fetch meetings:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to fetch meetings:", msg);
         setError(err.message || "Failed to load meetings");
         setMeetings([]);
       } finally {

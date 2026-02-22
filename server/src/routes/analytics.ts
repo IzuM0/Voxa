@@ -60,7 +60,8 @@ router.get("/stats", requireAuth, async (req: AuthenticatedRequest, res: Respons
 
     res.json(stats);
   } catch (err: any) {
-    console.error("Error fetching analytics stats:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching analytics stats:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({ error: "Database is temporarily unavailable. Check your network and try again." });
     }
@@ -104,7 +105,8 @@ router.get("/platforms", requireAuth, async (req: AuthenticatedRequest, res: Res
 
     res.json(stats);
   } catch (err: any) {
-    console.error("Error fetching platform stats:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching platform stats:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({ error: "Database is temporarily unavailable. Check your network and try again." });
     }
@@ -141,7 +143,8 @@ router.get("/voices", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     res.json(stats);
   } catch (err: any) {
-    console.error("Error fetching voice stats:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching voice stats:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({ error: "Database is temporarily unavailable. Check your network and try again." });
     }
@@ -214,7 +217,8 @@ router.get("/monthly", requireAuth, async (req: AuthenticatedRequest, res: Respo
 
     res.json(stats);
   } catch (err: any) {
-    console.error("Error fetching monthly stats:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching monthly stats:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({ error: "Database is temporarily unavailable. Check your network and try again." });
     }
@@ -251,7 +255,8 @@ router.get("/daily-activity", requireAuth, async (req: AuthenticatedRequest, res
       }))
     );
   } catch (err: any) {
-    console.error("Error fetching daily activity:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Error fetching daily activity:", msg);
     if (isDatabaseConnectionError(err)) {
       return res.status(503).json({ error: "Database is temporarily unavailable. Check your network and try again." });
     }

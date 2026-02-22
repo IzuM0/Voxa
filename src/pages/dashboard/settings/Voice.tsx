@@ -45,7 +45,8 @@ export default function SettingsVoice() {
           setPitch([Number.isFinite(pitchNum) ? pitchNum : 1.0]);
         }
       } catch (err) {
-        console.error("Failed to load settings:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to load settings:", msg);
       } finally {
         setIsLoading(false);
       }
@@ -89,8 +90,8 @@ export default function SettingsVoice() {
       const audio = new Audio(url);
       
       // Handle audio playback errors
-      audio.onerror = (e) => {
-        console.error("Audio playback error:", e);
+      audio.onerror = () => {
+        console.error("Audio playback error: failed to play preview audio");
         toast.error("Failed to play preview", {
           description: "There was an error playing the audio. Please try again.",
         });
@@ -108,8 +109,8 @@ export default function SettingsVoice() {
       try {
         await audio.play();
       } catch (playError: any) {
-        // Browser autoplay policy might block this
-        console.error("Audio play error:", playError);
+        const msg = playError instanceof Error ? playError.message : String(playError);
+        console.error("Audio play error:", msg);
         toast.error("Failed to play preview", {
           description: playError?.message || "Browser blocked audio playback. Please interact with the page first.",
         });
@@ -117,7 +118,8 @@ export default function SettingsVoice() {
         setIsPreviewing(false);
       }
     } catch (err: any) {
-      console.error("Preview failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Preview failed:", msg);
       toast.error("Preview failed", {
         description: err?.message || "Failed to generate preview. Please check your connection and try again.",
       });

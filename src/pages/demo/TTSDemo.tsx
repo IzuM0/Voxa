@@ -1,265 +1,82 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { TTSComposer } from "../../components/tts/TTSComposer";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import { Badge } from "../../components/ui/badge";
-import { ErrorState } from "../../components/error-states/ErrorState";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../../components/ui/collapsible";
+import { ChevronDown, Mic, Sparkles } from "lucide-react";
 
 export default function TTSDemo() {
-  const [showError, setShowError] = useState<string | null>(null);
+  const [showDevOptions, setShowDevOptions] = useState(false);
 
-  const handleSpeech = async (text: string, options: any) => {
-    console.log("TTS Options:", options);
-    console.log("Text to speak:", text);
+  const handleSpeech = async (_text: string, _options: any) => {
+    // Demo: no-op handler; TTSComposer handles playback internally when used in demo
   };
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="mb-2">TTS Composer Demo</h1>
-          <p className="text-muted-foreground">
-            Test the Text-to-Speech composer with different states and configurations
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
+      <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+        {/* Compact header */}
+        <div className="text-center mb-8">
+          <Link
+            to="/"
+            className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-6"
+          >
+            ← Back to home
+          </Link>
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Mic className="size-5 text-primary" />
+            <h1 className="text-2xl font-semibold tracking-tight">Try Whispra</h1>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+            Type below and hear it spoken with AI. No sign-up required for this demo.
           </p>
         </div>
 
-        {/* Main Composer Demo */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Full-Featured TTS Composer</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TTSComposer
-                  onSpeech={handleSpeech}
-                  maxCharacters={500}
-                  disabled={false}
-                />
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Features</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Character counter</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Voice selection</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Language options</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Speed control</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Pitch adjustment</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Loading states</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Error handling</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">✓</Badge>
-                  <span>Success feedback</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Test States</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setShowError("network-error")}
-                >
-                  Test Network Error
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setShowError("invalid-link")}
-                >
-                  Test Invalid Link
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setShowError("limit-exceeded")}
-                >
-                  Test Limit Exceeded
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setShowError(null)}
-                >
-                  Clear Errors
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Error States Demo */}
-        {showError && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Error State Preview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ErrorState
-                type={showError as any}
-                onRetry={() => setShowError(null)}
-                onDismiss={() => setShowError(null)}
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        {/* State Variations */}
-        <Tabs defaultValue="disabled">
-          <TabsList>
-            <TabsTrigger value="disabled">Disabled State</TabsTrigger>
-            <TabsTrigger value="limited">Character Limit</TabsTrigger>
-            <TabsTrigger value="compact">Compact Mode</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="disabled" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Disabled TTS Composer</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  When the meeting is not connected or user is offline
-                </p>
-              </CardHeader>
-              <CardContent>
-                <TTSComposer
-                  onSpeech={handleSpeech}
-                  maxCharacters={500}
-                  disabled={true}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="limited" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Low Character Limit</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Testing with a reduced character limit (100 characters)
-                </p>
-              </CardHeader>
-              <CardContent>
-                <TTSComposer
-                  onSpeech={handleSpeech}
-                  maxCharacters={100}
-                  disabled={false}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="compact" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Compact Mode</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Smaller version for mobile or embedded contexts
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="max-w-md">
-                  <TTSComposer
-                    onSpeech={handleSpeech}
-                    maxCharacters={200}
-                    disabled={false}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        {/* Component Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Component Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <h3 className="font-medium mb-2">States Implemented</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="p-3 bg-muted/30 rounded-lg">
-                  <strong>Idle:</strong> Ready to accept input
-                </div>
-                <div className="p-3 bg-muted/30 rounded-lg">
-                  <strong>Generating:</strong> Converting text to speech
-                </div>
-                <div className="p-3 bg-muted/30 rounded-lg">
-                  <strong>Playing:</strong> Audio is being played in meeting
-                </div>
-                <div className="p-3 bg-muted/30 rounded-lg">
-                  <strong>Success:</strong> Speech completed successfully
-                </div>
-                <div className="p-3 bg-muted/30 rounded-lg">
-                  <strong>Error:</strong> Generation or playback failed
-                </div>
-                <div className="p-3 bg-muted/30 rounded-lg">
-                  <strong>Disabled:</strong> Not connected to meeting
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-2">Visual Feedback</h3>
-              <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
-                <li>Real-time character count with color-coded warnings</li>
-                <li>Animated status banners for each state</li>
-                <li>Progress bar during audio playback</li>
-                <li>Pulsing indicators when voice is active</li>
-                <li>Contextual button colors and icons</li>
-                <li>Helper tooltips for advanced controls</li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-2">Controls Available</h3>
-              <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
-                <li>6 different voice options (Alloy, Echo, Fable, Onyx, Nova, Shimmer)</li>
-                <li>12 language selections</li>
-                <li>Speed adjustment (0.5x - 2.0x)</li>
-                <li>Pitch adjustment (0.5x - 2.0x)</li>
-                <li>Collapsible advanced settings</li>
-              </ul>
-            </div>
+        {/* Single composer — main focus */}
+        <Card className="shadow-sm border-border/80">
+          <CardContent className="p-4 sm:p-6 pt-6">
+            <TTSComposer
+              onSpeech={handleSpeech}
+              maxCharacters={500}
+              disabled={false}
+            />
           </CardContent>
         </Card>
+
+        {/* Short hint */}
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          Choose a voice, adjust speed and pitch in settings, then generate & speak.
+        </p>
+
+        {/* Optional developer section — collapsed by default */}
+        <Collapsible open={showDevOptions} onOpenChange={setShowDevOptions}>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-8 text-muted-foreground hover:text-foreground w-full justify-center gap-1"
+            >
+              <Sparkles className="size-3.5" />
+              Developer options
+              <ChevronDown
+                className={`size-4 transition-transform ${showDevOptions ? "rotate-180" : ""}`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-4 p-4 rounded-lg bg-muted/40 border border-border/60 text-sm text-muted-foreground space-y-2">
+              <p>Sign in to use TTS in meetings, save voice preferences, and view analytics.</p>
+              <Link to="/dashboard">
+                <Button variant="outline" size="sm">Go to app</Button>
+              </Link>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </div>
   );

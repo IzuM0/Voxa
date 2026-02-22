@@ -5,45 +5,49 @@ import path from "path";
 import dotenv from "dotenv";
 import type { Request, Response } from "express";
 import { initializeDatabase, getPool, queryOne } from "./db/index";
-import { optionalAuth, AuthenticatedRequest } from "./middleware/auth";
+import { optionalAuth, requireAuth, AuthenticatedRequest } from "./middleware/auth";
 import { ttsRateLimiter, apiRateLimiter } from "./middleware/rateLimit";
 import meetingsRouter from "./routes/meetings";
 import ttsRouter from "./routes/tts";
 import settingsRouter from "./routes/settings";
 import analyticsRouter from "./routes/analytics";
 import userRouter from "./routes/user";
-import { convertMp3ToWav } from "./audio/convertToWav";
+import { convertMp3ToWav, getWavDurationSeconds } from "./audio/convertToWav";
 
 // Load server/.env from server directory (works whether run from repo root or server/)
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
-if (process.env.DATABASE_URL) {
-  console.log("📂 DATABASE_URL loaded");
-} else {
-  console.warn("⚠️  DATABASE_URL not set — add it to server/.env to enable database");
-}
-if (process.env.OPENAI_API_KEY) {
+if (process.env.NODE_ENV === "development") {
+  if (process.env.DATABASE_URL) {
+    console.log("📂 DATABASE_URL loaded");
+  } else {
+    console.warn("⚠️  DATABASE_URL not set — add it to server/.env to enable database");
+  }
+  if (process.env.OPENAI_API_KEY) {
     console.log("🔑 OPENAI_API_KEY loaded — TTS is enabled");
   } else {
     console.warn("⚠️  OPENAI_API_KEY not set — add it to server/.env to enable text-to-speech");
   }
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-if (supabaseUrl) {
-  console.log("🔐 SUPABASE_URL loaded — JWT verification enabled");
-} else {
-  console.warn("⚠️  SUPABASE_URL not set — JWT verification will fail. Add VITE_SUPABASE_URL or SUPABASE_URL to server/.env");
+  if (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL) {
+    console.log("🔐 SUPABASE_URL loaded — JWT verification enabled");
+  } else {
+    console.warn("⚠️  SUPABASE_URL not set — JWT verification will fail. Add VITE_SUPABASE_URL or SUPABASE_URL to server/.env");
+  }
 }
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 
-// Log rate limiting configuration
-const ttsRateLimitMax = process.env.TTS_RATE_LIMIT_MAX 
-  ? parseInt(process.env.TTS_RATE_LIMIT_MAX, 10) 
+// Log rate limiting configuration (dev only)
+const ttsRateLimitMax = process.env.TTS_RATE_LIMIT_MAX
+  ? parseInt(process.env.TTS_RATE_LIMIT_MAX, 10)
   : (process.env.NODE_ENV === 'production' ? 10 : 50);
 const ttsRateLimitWindow = process.env.TTS_RATE_LIMIT_WINDOW_MS
   ? parseInt(process.env.TTS_RATE_LIMIT_WINDOW_MS, 10) / 60000
   : 15;
-if (process.env.DISABLE_RATE_LIMIT === 'true' && process.env.NODE_ENV !== 'production') {
-  console.log("⚠️  Rate limiting DISABLED (development mode)");
-} else {
-  console.log(`🚦 Rate limiting: ${ttsRateLimitMax} TTS requests per ${ttsRateLimitWindow} minutes`);
+if (process.env.NODE_ENV === "development") {
+  if (process.env.DISABLE_RATE_LIMIT === 'true') {
+    console.log("⚠️  Rate limiting DISABLED (development mode)");
+  } else {
+    console.log(`🚦 Rate limiting: ${ttsRateLimitMax} TTS requests per ${ttsRateLimitWindow} minutes`);
+  }
 }
 
 const app = express();
@@ -85,12 +89,12 @@ let dbInitialized = false;
 initializeDatabase()
   .then(() => {
     dbInitialized = true;
-    console.log("✅ Database ready");
+    if (process.env.NODE_ENV === "development") console.log("✅ Database ready");
   })
   .catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error("⚠️  Database initialization failed:", message);
-    console.log("⚠️  Server will continue without database features");
+    if (process.env.NODE_ENV === "development") console.log("⚠️  Server will continue without database features");
   });
 
 type TtsMessageStatus = "pending" | "sent" | "failed";
@@ -108,7 +112,7 @@ const MAX_TTS_CHARS = 500;
  * 
  * Protected by rate limiting: 10 requests per 15 minutes per user
  */
-app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/tts/stream", ttsRateLimiter, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { text, voice, language, speed, pitch, meeting_id } = req.body ?? {};
 
   if (typeof text !== "string" || !text.trim()) {
@@ -141,8 +145,7 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
             "SELECT id FROM meetings WHERE id = $1 AND user_id = $2",
             [meeting_id, req.userId]
           );
-          if (!meeting) {
-            // Don't fail the request, just log without meeting_id
+          if (!meeting && process.env.NODE_ENV === "development") {
             console.warn(`Meeting ${meeting_id} not found for user ${req.userId}`);
           }
         }
@@ -168,7 +171,7 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
       }
     } catch (dbErr: any) {
       // Don't fail the TTS request if DB logging fails
-      console.error("Failed to log TTS message to database:", dbErr.message);
+      console.error("Failed to log TTS message to database:", dbErr instanceof Error ? dbErr.message : String(dbErr));
     }
   }
 
@@ -205,7 +208,7 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
       const textBody = await upstream.text().catch(() => "");
       let errorMessage = "TTS provider error";
       let errorDetails = textBody;
-      
+
       // Try to parse OpenAI error response
       try {
         const errorJson = JSON.parse(textBody);
@@ -223,7 +226,7 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
           errorDetails = textBody;
         }
       }
-      
+
       ttsMessageStatus.set(messageId, "failed");
 
       // Update database status if message was logged
@@ -305,15 +308,21 @@ app.post("/api/tts/stream", ttsRateLimiter, async (req: AuthenticatedRequest, re
     res.setHeader("Content-Length", String(wavBuffer.length));
     res.send(wavBuffer);
 
+    // Store audio duration for meeting-layer analytics (server-side from WAV buffer)
+    const audioDurationSeconds = getWavDurationSeconds(wavBuffer);
+
     ttsMessageStatus.set(messageId, "sent");
     if (dbMessageId && req.userId) {
       try {
         const pool = getPool();
         if (pool) {
-          await pool.query("UPDATE tts_messages SET status = $1 WHERE id = $2", ["sent", dbMessageId]);
+          await pool.query(
+            "UPDATE tts_messages SET status = $1, audio_duration_seconds = $2 WHERE id = $3",
+            ["sent", Math.round(audioDurationSeconds), dbMessageId]
+          );
         }
       } catch (dbErr) {
-        // Ignore
+        // Ignore DB errors; message already sent
       }
     }
   } catch (err: any) {
@@ -379,7 +388,8 @@ app.use("/api/analytics", analyticsRouter);
 app.use("/api/user", userRouter);
 
 app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Voxa backend listening on http://localhost:${port}`);
+  if (process.env.NODE_ENV === "development") {
+    console.log(`Voxa backend listening on http://localhost:${port}`);
+  }
 });
 

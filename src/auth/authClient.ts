@@ -50,13 +50,14 @@ const isSupabaseConfigured = Boolean(
 
 // Throw error if Supabase is not configured
 if (!isSupabaseConfigured) {
-  // Debug info
-  console.error("[Auth] Configuration Check:", {
-    hasUrl: Boolean(supabaseUrl),
-    hasKey: Boolean(supabaseAnonKey),
-    urlValue: supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : "missing",
-    keyValue: supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : "missing",
-  });
+  if (import.meta.env.DEV) {
+    console.error("[Auth] Configuration Check:", {
+      hasUrl: Boolean(supabaseUrl),
+      hasKey: Boolean(supabaseAnonKey),
+      urlValue: supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : "missing",
+      keyValue: supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : "missing",
+    });
+  }
 
   const errorMessage = `
 ⚠️ Supabase authentication is required but not configured!
@@ -85,8 +86,7 @@ Get these values from your Supabase dashboard:
         duration: 10000, // Show for 10 seconds
       });
     }).catch(() => {
-      // Fallback: log to console if toast is not available
-      console.error("[Auth] Toast not available, error logged above");
+      if (import.meta.env.DEV) console.error("[Auth] Toast not available, error logged above");
     });
   }
 }
@@ -97,11 +97,12 @@ let supabase: ReturnType<typeof getSupabaseClient> | null = null;
 if (isSupabaseConfigured) {
   try {
     supabase = getSupabaseClient();
-    if (process.env.NODE_ENV === "development") {
+    if (import.meta.env.DEV) {
       console.log("[Auth] Supabase client initialized successfully");
     }
   } catch (err) {
-    console.error("[Auth] Failed to initialize Supabase client:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[Auth] Failed to initialize Supabase client:", msg);
     throw new Error("Failed to initialize Supabase authentication. Please check your configuration.");
   }
 } else {

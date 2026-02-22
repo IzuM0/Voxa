@@ -44,7 +44,7 @@ async function verifySupabaseToken(token: string): Promise<{ userId: string; ema
       `${supabaseUrl}/.well-known/jwks.json`,
     ];
 
-    if (process.env.NODE_ENV !== "production") {
+    if (process.env.NODE_ENV === "development") {
       console.log("JWKS URLs to try:", jwksUrls[0]);
     }
 
@@ -72,7 +72,9 @@ async function verifySupabaseToken(token: string): Promise<{ userId: string; ema
           // If issuer/audience validation fails, try without it
           if (verifyErr instanceof Error && 
               (verifyErr.message.includes("issuer") || verifyErr.message.includes("audience"))) {
-            console.warn(`JWT issuer/audience mismatch for ${jwksUrl} - trying without strict validation`);
+            if (process.env.NODE_ENV === "development") {
+              console.warn(`JWT issuer/audience mismatch for ${jwksUrl} - trying without strict validation`);
+            }
             try {
               const { payload } = await jwtVerify(token, jwks, {});
               if (payload.sub) {
@@ -110,19 +112,32 @@ async function verifySupabaseToken(token: string): Promise<{ userId: string; ema
     return null;
   } catch (err) {
     if (err instanceof Error) {
-      console.error("Token verification failed:", err.message);
-      if (process.env.NODE_ENV !== "production") {
-        console.error("Error details:", err);
-        const supabaseUrl = normalizeSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "");
-        if (err.message.includes("Expected 200 OK") && supabaseUrl) {
-          console.error(
-            "JWKS hint: Ensure VITE_SUPABASE_URL in server/.env is your project URL without trailing slash, e.g. https://xxxx.supabase.co"
-          );
-          console.error("  JWKS URL should be:", `${supabaseUrl}/auth/v1/.well-known/jwks.json`);
+      // Network/DNS errors are expected if Supabase is unreachable - log once, not every request
+      const isNetworkError = err.message.includes("ENOTFOUND") || 
+                             err.message.includes("fetch failed") ||
+                             err.message.includes("getaddrinfo");
+      
+      if (isNetworkError) {
+        if (process.env.NODE_ENV === "development") {
+          const supabaseUrl = normalizeSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "");
+          console.warn(`⚠️  Cannot reach Supabase (${supabaseUrl}) - JWT verification disabled. Check if project is paused or network is blocked.`);
+        }
+      } else {
+        console.error("Token verification failed:", err.message);
+        if (process.env.NODE_ENV === "development") {
+          console.error("Error details:", err.message);
+          const supabaseUrl = normalizeSupabaseUrl(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "");
+          if (err.message.includes("Expected 200 OK") && supabaseUrl) {
+            console.error(
+              "JWKS hint: Ensure VITE_SUPABASE_URL in server/.env is your project URL without trailing slash, e.g. https://xxxx.supabase.co"
+            );
+            console.error("  JWKS URL should be:", `${supabaseUrl}/auth/v1/.well-known/jwks.json`);
+          }
         }
       }
     } else {
-      console.error("Token verification failed:", err);
+      const msg = err instanceof Error ? (err as Error).message : String(err);
+      console.error("Token verification failed:", msg);
     }
     return null;
   }
